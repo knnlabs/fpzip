@@ -1,4 +1,4 @@
-name: Compile fpzip Library (Multi-architecture)
+name: Compile fpzip Library (Multi-platform)
 
 on:
   push:
@@ -9,47 +9,63 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
+    name: Build on ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        arch: [x86_64, arm64]
-        exclude:
-          # GitHub-hosted runners don't support macOS ARM64 natively
-          - os: macos-latest
-            arch: arm64
         include:
-          - os: ubuntu-latest
+          - name: ubuntu-x86_64
+            os: ubuntu-latest
             arch: x86_64
             cmake_generator: "Unix Makefiles"
-          - os: ubuntu-latest
+          - name: ubuntu-arm64
+            os: ubuntu-latest
             arch: arm64
             cmake_generator: "Unix Makefiles"
-          - os: macos-latest
+          - name: macos-x86_64
+            os: macos-latest
             arch: x86_64
             cmake_generator: "Unix Makefiles"
-          - os: windows-latest
+          - name: windows-x86_64
+            os: windows-latest
             arch: x86_64
             cmake_generator: "Visual Studio 17 2022"
             cmake_arch: "-A x64"
-          - os: windows-latest
+          - name: windows-arm64
+            os: windows-latest
             arch: arm64
             cmake_generator: "Visual Studio 17 2022"
             cmake_arch: "-A ARM64"
+          - name: ios
+            os: macos-latest
+            cmake_generator: "Xcode"
+            cmake_toolchain: "-DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake -DPLATFORM=OS64"
+          - name: android
+            os: ubuntu-latest
+            cmake_generator: "Unix Makefiles"
+            cmake_toolchain: "-DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21"
 
     steps:
     - uses: actions/checkout@v2
 
     - name: Set up QEMU
-      if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
+      if: matrix.name == 'ubuntu-arm64'
       uses: docker/setup-qemu-action@v2
+
+    - name: Setup Android NDK
+      if: matrix.name == 'android'
+      uses: android-actions/setup-android@v2
+
+    - name: Install iOS toolchain
+      if: matrix.name == 'ios'
+      run: |
+        curl -L https://github.com/leetal/ios-cmake/raw/master/ios.toolchain.cmake -o ios.toolchain.cmake
 
     - name: Configure CMake
       run: |
         mkdir build
         cd build
-        cmake .. -G "${{ matrix.cmake_generator }}" ${{ matrix.cmake_arch }} -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
+        cmake .. -G "${{ matrix.cmake_generator }}" ${{ matrix.cmake_arch }} ${{ matrix.cmake_toolchain }} -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
 
     - name: Build
       working-directory: ./build
@@ -59,11 +75,15 @@ jobs:
       shell: bash
       run: |
         mkdir artifacts
-        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+        if [ "${{ matrix.name }}" == "windows-x86_64" ] || [ "${{ matrix.name }}" == "windows-arm64" ]; then
           cp build/lib/Release/*.lib artifacts/ || true
           cp build/bin/Release/*.dll artifacts/ || true
-        elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+        elif [ "${{ matrix.name }}" == "macos-x86_64" ]; then
           cp build/lib/*.dylib artifacts/ || true
+        elif [ "${{ matrix.name }}" == "ios" ]; then
+          cp build/lib/*.a artifacts/ || true
+        elif [ "${{ matrix.name }}" == "android" ]; then
+          cp build/lib/*.so artifacts/ || true
         else
           cp build/lib/*.so artifacts/ || true
         fi
@@ -75,7 +95,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: fpzip-${{ matrix.os }}-${{ matrix.arch }}
+        name: fpzip-${{ matrix.name }}
         path: artifacts/
 
   release:
@@ -103,5 +123,5 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: .
-        asset_name: fpzip-multi-arch.zip
+        asset_name: fpzip-multi-platform.zip
         asset_content_type: application/zip
