@@ -38,11 +38,15 @@ jobs:
       run: |
         mkdir artifacts
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
-          cp build/src/Release/*.lib artifacts/
-          cp build/src/Release/*.dll artifacts/
+          cp build/src/Release/*.lib artifacts/ || true
+          cp build/src/Release/*.dll artifacts/ || true
+        elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+          cp build/lib/*.dylib artifacts/ || true
         else
-          cp build/src/*.so artifacts/ || cp build/src/*.dylib artifacts/
+          cp build/lib/*.so artifacts/ || true
         fi
+        ls -R build
+        ls -R artifacts
       shell: bash
 
     - name: Upload Artifacts
