@@ -1,0 +1,80 @@
+name: Compile fpzip Library
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            cmake_generator: "Unix Makefiles"
+          - os: macos-latest
+            cmake_generator: "Unix Makefiles"
+          - os: windows-latest
+            cmake_generator: "Visual Studio 17 2022"
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Configure CMake
+      run: |
+        mkdir build && cd build
+        cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
+
+    - name: Build
+      working-directory: ./build
+      run: cmake --build . --config Release
+
+    - name: Package Library
+      run: |
+        mkdir artifacts
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          cp build/src/Release/*.lib artifacts/
+          cp build/src/Release/*.dll artifacts/
+        else
+          cp build/src/*.so artifacts/ || cp build/src/*.dylib artifacts/
+        fi
+      shell: bash
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: fpzip-${{ matrix.os }}
+        path: artifacts/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/download-artifact@v2
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}-${{ github.sha }}
+        release_name: Release ${{ github.ref }}-${{ github.sha }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Assets
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./fpzip-${{ matrix.os }}
+        asset_name: fpzip-${{ matrix.os }}.zip
+        asset_content_type: application/zip
