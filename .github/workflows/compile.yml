@@ -27,7 +27,8 @@ jobs:
 
     - name: Configure CMake
       run: |
-        mkdir build && cd build
+        mkdir build
+        cd build
         cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
 
     - name: Build
@@ -35,19 +36,26 @@ jobs:
       run: cmake --build . --config Release
 
     - name: Package Library
+      shell: bash
       run: |
         mkdir artifacts
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
           cp build/src/Release/*.lib artifacts/ || true
           cp build/src/Release/*.dll artifacts/ || true
+          # Additional search locations for Windows
+          cp build/lib/Release/*.lib artifacts/ || true
+          cp build/lib/Release/*.dll artifacts/ || true
+          cp build/Release/*.lib artifacts/ || true
+          cp build/Release/*.dll artifacts/ || true
         elif [ "${{ matrix.os }}" == "macos-latest" ]; then
           cp build/lib/*.dylib artifacts/ || true
         else
           cp build/lib/*.so artifacts/ || true
         fi
+        echo "Build directory contents:"
         ls -R build
+        echo "Artifacts directory contents:"
         ls -R artifacts
-      shell: bash
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
