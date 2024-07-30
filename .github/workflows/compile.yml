@@ -1,4 +1,4 @@
-name: Compile fpzip Library
+name: Compile fpzip Library (Multi-architecture)
 
 on:
   push:
@@ -9,27 +9,47 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        arch: [x86_64, arm64]
+        exclude:
+          # GitHub-hosted runners don't support macOS ARM64 natively
+          - os: macos-latest
+            arch: arm64
         include:
           - os: ubuntu-latest
+            arch: x86_64
+            cmake_generator: "Unix Makefiles"
+          - os: ubuntu-latest
+            arch: arm64
             cmake_generator: "Unix Makefiles"
           - os: macos-latest
+            arch: x86_64
             cmake_generator: "Unix Makefiles"
           - os: windows-latest
+            arch: x86_64
             cmake_generator: "Visual Studio 17 2022"
+            cmake_arch: "-A x64"
+          - os: windows-latest
+            arch: arm64
+            cmake_generator: "Visual Studio 17 2022"
+            cmake_arch: "-A ARM64"
 
     steps:
     - uses: actions/checkout@v2
+
+    - name: Set up QEMU
+      if: matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64'
+      uses: docker/setup-qemu-action@v2
 
     - name: Configure CMake
       run: |
         mkdir build
         cd build
-        cmake .. -G "${{ matrix.cmake_generator }}" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
+        cmake .. -G "${{ matrix.cmake_generator }}" ${{ matrix.cmake_arch }} -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_UTILITIES=OFF -DBUILD_TESTING=OFF
 
     - name: Build
       working-directory: ./build
@@ -40,13 +60,8 @@ jobs:
       run: |
         mkdir artifacts
         if [ "${{ matrix.os }}" == "windows-latest" ]; then
-          cp build/src/Release/*.lib artifacts/ || true
-          cp build/src/Release/*.dll artifacts/ || true
-          # Additional search locations for Windows
           cp build/lib/Release/*.lib artifacts/ || true
-          cp build/lib/Release/*.dll artifacts/ || true
-          cp build/Release/*.lib artifacts/ || true
-          cp build/Release/*.dll artifacts/ || true
+          cp build/bin/Release/*.dll artifacts/ || true
         elif [ "${{ matrix.os }}" == "macos-latest" ]; then
           cp build/lib/*.dylib artifacts/ || true
         else
@@ -60,7 +75,7 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: fpzip-${{ matrix.os }}
+        name: fpzip-${{ matrix.os }}-${{ matrix.arch }}
         path: artifacts/
 
   release:
@@ -87,6 +102,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./fpzip-${{ matrix.os }}
-        asset_name: fpzip-${{ matrix.os }}.zip
+        asset_path: .
+        asset_name: fpzip-multi-arch.zip
         asset_content_type: application/zip
